@@ -804,8 +804,59 @@ CREATE TABLE chu_de_ngu_phap (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Chu de hoc ngu phap';
 
+-- Bảng chi tiết bài học (chỉ chứa ngày học)
+CREATE TABLE `chi_tiet_bai_hoc` (
+  `id`           bigint unsigned NOT NULL AUTO_INCREMENT,
+  `bai_hoc_id`   bigint unsigned NOT NULL,
+  `ngay_hoc`     date NOT NULL,
+  `mo_ta`        varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ctbh_ngay` (`bai_hoc_id`, `ngay_hoc`),
+  CONSTRAINT `fk_ctbh_bai_hoc` FOREIGN KEY (`bai_hoc_id`) REFERENCES `bai_hoc` (`id`)
+);
 
-ALTER TABLE nhom_tu_vung
+-- Trung gian: ngày học ↔ chủ đề từ vựng
+CREATE TABLE `chi_tiet_bai_hoc_tu_vung` (
+  `id`                    bigint unsigned NOT NULL AUTO_INCREMENT,
+  `chi_tiet_bai_hoc_id`   bigint unsigned NOT NULL,
+  `chu_de_tu_vung_id`     bigint unsigned NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ctbhtv` (`chi_tiet_bai_hoc_id`, `chu_de_tu_vung_id`),
+  CONSTRAINT `fk_ctbhtv_ctbh` FOREIGN KEY (`chi_tiet_bai_hoc_id`) REFERENCES `chi_tiet_bai_hoc` (`id`),
+  CONSTRAINT `fk_ctbhtv_cdtv`  FOREIGN KEY (`chu_de_tu_vung_id`) REFERENCES `chu_de_tu_vung` (`id`)
+);
+
+-- Trung gian: ngày học ↔ ngữ pháp
+CREATE TABLE `chi_tiet_bai_hoc_ngu_phap` (
+  `id`                    bigint unsigned NOT NULL AUTO_INCREMENT,
+  `chi_tiet_bai_hoc_id`   bigint unsigned NOT NULL,
+  `ngu_phap_id`           bigint unsigned NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ctbhnp` (`chi_tiet_bai_hoc_id`, `ngu_phap_id`),
+  CONSTRAINT `fk_ctbhnp_ctbh` FOREIGN KEY (`chi_tiet_bai_hoc_id`) REFERENCES `chi_tiet_bai_hoc` (`id`),
+  CONSTRAINT `fk_ctbhnp_np`   FOREIGN KEY (`ngu_phap_id`) REFERENCES `ngu_phap` (`id`)
+);
+
+ALTER TABLE `ket_qua_ky_nang`
+ADD COLUMN `phien_luyen_tap_id` bigint unsigned DEFAULT NULL,
+ADD CONSTRAINT `fk_kqkn_phien_luyen_tap`
+  FOREIGN KEY (`phien_luyen_tap_id`)
+  REFERENCES `phien_luyen_tap` (`id`)
+  ON DELETE SET NULL ON UPDATE CASCADE;
+  
+  
+ALTER TABLE `tien_do_tu_vung`
+ADD COLUMN `chu_de_tu_vung_id` bigint unsigned DEFAULT NULL;
+
+ALTER TABLE `tien_do_tu_vung`
+ADD CONSTRAINT `fk_tdtv_chu_de`
+  FOREIGN KEY (`chu_de_tu_vung_id`)
+  REFERENCES `chu_de_tu_vung` (`id`)
+  ON DELETE SET NULL ON UPDATE CASCADE;
+  
+
+drop table chi_tiet_bai_hoc_tu_vung;
+ALTER TABLE nhom_tu_vung 
     ADD COLUMN chu_de_tu_vung_id BIGINT UNSIGNED DEFAULT NULL AFTER chu_de_id;
 SET SQL_SAFE_UPDATES = 0;
 UPDATE nhom_tu_vung ntv
@@ -944,14 +995,38 @@ ALTER TABLE phien_flashcard
 ALTER TABLE tu_vung
     DROP COLUMN nghia_mo_rong;
 
+ALTER TABLE bai_hoc
+MODIFY COLUMN trang_thai ENUM(
+  'CHUA_CONG_BO',
+  'DANG_HOAT_DONG',
+  'LUU_TRU'
+) DEFAULT 'CHUA_CONG_BO';
+
+ALTER TABLE nhom_tu_vung
+DROP FOREIGN KEY fk_ntv_cap_do;
+
+ALTER TABLE chu_de_tu_vung
+ADD COLUMN cap_do_id BIGINT UNSIGNED;
+
+ALTER TABLE chu_de_tu_vung
+ADD CONSTRAINT fk_cdtv_cap_do
+FOREIGN KEY (cap_do_id)
+REFERENCES cap_do(id)
+ON DELETE SET NULL
+ON UPDATE CASCADE;
+
 -- ============================================================
 -- SEED DATA: Du lieu ban dau
 -- ============================================================
 
 -- Vai tro
-INSERT INTO vai_tro (ten, mo_ta) VALUES
-('ADMIN',    'Quan tri he thong'),
-('NGUOI_DUNG', 'Nguoi dung thong thuong');
+INSERT INTO vai_tro (ten, mo_ta)
+VALUES 
+('ADMIN', 'Quản trị hệ thống'),
+('Moderator', 'Quản lý nội dung'),
+('NGUOI_DUNG', 'Người dùng') AS new
+ON DUPLICATE KEY UPDATE
+mo_ta = new.mo_ta;
 
 -- Cap do
 INSERT INTO cap_do (ten, mo_ta, thu_tu_hien_thi, diem_toi_thieu, diem_toi_da) VALUES
@@ -964,13 +1039,14 @@ INSERT INTO cap_do (ten, mo_ta, thu_tu_hien_thi, diem_toi_thieu, diem_toi_da) VA
 
 -- Loai tu
 INSERT INTO loai_tu (ten, ky_hieu, mo_ta) VALUES
-('Danh tu',     'N',  'Danh tu (Noun)'),
-('Dong tu',     'V',  'Dong tu (Verb)'),
-('Tinh tu',     'ADJ','Tinh tu (Adjective)'),
-('Trang tu',    'ADV','Trang tu (Adverb)'),
-('So tu',       'NUM','So tu (Numeral)'),
-('Dong chi',    'PRON','Dong chi (Pronoun)'),
-('Trong tu',    'PART','Trong tu (Particle)'),
-('Thu nguyen',  'AFF','Thu nguyen (Affix)');
+('Danh tu',      'N',   'Danh từ (명사 - Noun)'),
+('Dai tu',       'PRON','Đại từ (대명사 - Pronoun)'),
+('So tu',        'NUM', 'Số từ (수사 - Numeral)'),
+('Dong tu',      'V',   'Động từ (동사 - Verb)'),
+('Tinh tu',      'ADJ', 'Tính từ (형용사 - Adjective)'),
+('Pho tu',       'ADV', 'Phó từ (부사 - Adverb)'),
+('Tro tu',       'PART','Trợ từ (조사 - Particle)'),
+('Lien tu',      'CONJ','Liên từ (접속사 - Conjunction)'),
+('Than tu',      'INTJ','Thán từ (감탄사 - Interjection)');
 
 SET FOREIGN_KEY_CHECKS = 1;
